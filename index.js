@@ -3,6 +3,7 @@ const bodyParser=require('body-parser');
 const mysql = require('mysql2');
 const axios = require('axios');
 const util = require('util');
+const cors = require('cors')
 
 //criar a conexão com o banco de dados
 const db=mysql.createConnection({
@@ -15,8 +16,7 @@ const db=mysql.createConnection({
 
 const servicoUsuarioURL = 'http://localhost:3000';
 const servicoChaveURL = 'http://localhost:4000';
-let nomeUsuario = '';
-let valorChave = '';
+
 const dbQuery = util.promisify(db.query).bind(db);
 //Conectar com o banco de dados
 
@@ -32,6 +32,7 @@ db.connect((err)=>{
 //Criar o App
 
 var app=express();
+app.use(cors())
 app.use(bodyParser.json());
 //Rota inicial
 
@@ -39,38 +40,69 @@ app.get('/',(req, res)=>{
     res.send('API funcionando');
 });
 
-//Inserir os Dados (post)
-app.post('/denuncias', async(req, res)=>{
-    var {conteudo_denuncia, descricao_denuncia, situacao_denuncia, id_usuario_fk, id_chave_fk}=req.body;
-    if(!conteudo_denuncia || !descricao_denuncia || !situacao_denuncia || !id_usuario_fk|| !id_chave_fk){
-        return res.status(400).json({erro:'Todas as informações são obrigatórias'});
+
+
+app.post('/denuncias', async (req, res) => {
+    var { conteudo_denuncia, descricao_denuncia, id_usuario_fk, valor_chave } = req.body;
+    
+    if (!conteudo_denuncia || !descricao_denuncia || !id_usuario_fk || !valor_chave) {
+        return res.status(400).json({ erro: 'Todas as informações são obrigatórias' });
     }
+
+    let nomeUsuario;
+    let idChave; 
+    
 
     try {
         const respostaUsuario = await axios.get(`${servicoUsuarioURL}/usuarios/${id_usuario_fk}`);
         nomeUsuario = respostaUsuario.data.nome_usuario;
-        const respostaChave = await axios.get(`${servicoChaveURL}/chave/${id_chave_fk}`);
-        valorChave = respostaChave.data.valor_chave;
-    } catch (error) {
-        console.error('Erro ao validar chave ou usuario:', error);
-        return res.status(400).json({ erro: 'Usuário ou Chave inválidos' });
-    }
-    var sql='INSERT INTO denuncias(conteudo_denuncia, descricao_denuncia, situacao_denuncia, id_usuario_fk, id_chave_fk, nome_usuario, valor_chave)VALUES(?,?,?,?,?,?,?)';
-    db.query(sql,[conteudo_denuncia, descricao_denuncia, situacao_denuncia, id_usuario_fk, id_chave_fk, nomeUsuario, valorChave],(err, result)=>{
-        if(err){
-            console.error('Erro ao Inserir:',err);
-            return res.status(500).json({erro:'Erro ao inserir no banco de dados'});
+        
+        let respostaChave;
+        try {
+            respostaChave = await axios.get(`${servicoChaveURL}/chave/${valor_chave}`);
+            idChave = respostaChave.data.id || respostaChave.data.id_chave;
+        } catch (error) {
+
+            if (error.response && (error.response.status === 404 || error.response.status === 400)) {
+                console.log(`Chave com valor '${valor_chave}' não encontrada. Criando uma nova.`);
+                
+
+                const novaChave = {
+                   valor_chave: valor_chave,
+                   numeroDenuncias_chave: 0
+                };
+                
+                const respostaNovaChave = await axios.post(`${servicoChaveURL}/chave`, novaChave);
+                idChave = respostaNovaChave.data.id || respostaNovaChave.data.id_chave; 
+                console.log(`Nova chave criada com ID: ${idChave}`);
+            } else {
+                throw error;
+            }
         }
-        axios.put(`${servicoChaveURL}/chave/contadorsoma/${id_chave_fk}`).catch((error) => {
-            console.error('Erro ao notificar o serviço de chave:', error);
-        });
-        res.status(201).json({
-           mensagem:'Denuncia Inserida com sucesso',id: result.insertId
-        });
+        
+    } catch (error) {
+        console.error('Erro ao validar usuário ou chave, ou ao criar nova chave:', error.message || error.response.data || error);
+        return res.status(400).json({ erro: 'Usuário inválido ou falha na operação da Chave' });
     }
-);
-}
-);
+
+    var sql = 'INSERT INTO denuncias(conteudo_denuncia, descricao_denuncia, id_usuario_fk, id_chave_fk, nome_usuario, valor_chave) VALUES(?,?,?,?,?,?)';
+    
+    db.query(sql, [conteudo_denuncia, descricao_denuncia, id_usuario_fk, idChave, nomeUsuario, valor_chave], (err, result) => {
+        if (err) {
+            console.error('Erro ao Inserir:', err);
+            return res.status(500).json({ erro: 'Erro ao inserir no banco de dados' });
+        }
+        axios.put(`${servicoChaveURL}/chave/contadorsoma/${idChave}`).catch((error) => {
+            console.error('Erro ao notificar o serviço de chave para incrementar o contador:', error);
+        });
+
+        res.status(201).json({
+            mensagem: 'Denuncia Inserida com sucesso',
+            id: result.insertId,
+            id_chave_fk_usado: idChave 
+        });
+    });
+});
 
 //Listar todas as denuncias(Get)
 app.get('/denuncias',(req, res)=>{
@@ -86,12 +118,12 @@ app.get('/denuncias',(req, res)=>{
 
 app.put('/denuncias/:id_denuncia',(req, res)=>{
     var {id_denuncia}=req.params;
-    var {conteudo_denuncia, descricao_denuncia, situacao_denuncia, id_chave_fk}=req.body;
-    if( !conteudo_denuncia || !descricao_denuncia || !situacao_denuncia || !id_chave_fk ){
+    var {conteudo_denuncia, descricao_denuncia, id_chave_fk}=req.body;
+    if( !conteudo_denuncia || !descricao_denuncia  || !id_chave_fk ){
         return res.status(400).json({erro:'Todas as informações são obrigatórias'});
     }
-    var sql='UPDATE denuncias SET conteudo_denuncia=?, descricao_denuncia=?, situacao_denuncia=?, id_chave_fk=? WHERE id_denuncia=?';
-    db.query(sql,[conteudo_denuncia, descricao_denuncia, situacao_denuncia, id_chave_fk, id_denuncia],(err, result)=>{
+    var sql='UPDATE denuncias SET conteudo_denuncia=?, descricao_denuncia=?, id_chave_fk=? WHERE id_denuncia=?';
+    db.query(sql,[conteudo_denuncia, descricao_denuncia, id_chave_fk, id_denuncia],(err, result)=>{
         if(err){
             console.error('Erro ao atualizar:',err);
             return res.status(500).json({erro:'Erro ao atualizar no banco de dados'});
