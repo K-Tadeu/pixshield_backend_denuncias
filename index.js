@@ -158,6 +158,37 @@ app.get('/denuncias/:id_denuncia',(req, res)=>{
 );
 });
 
+
+app.get('/denuncias/pesquisar/usu/:id_usuario',(req, res)=>{
+    var {id_usuario}=req.params;
+    db.query('SELECT * FROM denuncias WHERE id_usuario_fk=?',[id_usuario],(err, results1)=>
+    {
+        if(err){
+            return res.status(500).json({erro:'Erro ao Buscar denuncia'});
+        }
+        if(results1.length===0){
+            return res.status(404).json({mensagem:'Denuncia não encontrada'});
+        }
+        res.json(results1);
+    }
+);
+});
+
+app.get('/denuncias/pesquisar/:valor_chave',(req, res)=>{
+    var {valor_chave}=req.params;
+    db.query('SELECT * FROM denuncias WHERE valor_chave=?',[valor_chave],(err, results1)=>
+    {
+        if(err){
+            return res.status(500).json({erro:'Erro ao Buscar denuncia'});
+        }
+        if(results1.length===0){
+            return res.status(404).json({mensagem:'Denuncia não encontrada'});
+        }
+        res.json(results1);
+    }
+);
+});
+
 app.delete('/denuncias/:id_denuncia', async (req, res)=>{
     var {id_denuncia}=req.params;
     try{
