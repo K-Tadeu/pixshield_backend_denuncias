@@ -98,7 +98,7 @@ app.post('/denuncias', async (req, res) => {
 
         res.status(201).json({
             mensagem: 'Denuncia Inserida com sucesso',
-            id: result.insertId,
+            id_denuncia: result.insertId,
             id_chave_fk_usado: idChave 
         });
     });
