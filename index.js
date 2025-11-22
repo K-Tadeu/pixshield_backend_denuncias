@@ -116,6 +116,17 @@ app.get('/denuncias',(req, res)=>{
     });
 });
 
+app.get('/denuncias/contador',(req,res)=>{
+    var sql='SELECT COUNT(*) FROM denuncias';
+    db.query(sql,(err, results)=>{
+        if(err){
+            console.error('Erro ao buscar as denuncias:',err);
+            return res.status(500).json({erro:'Erro ao buscar no banco de dados'});
+        }
+        res.status(200).json(results);
+    });
+});
+
 app.put('/denuncias/:id_denuncia',(req, res)=>{
     var {id_denuncia}=req.params;
     var {conteudo_denuncia, descricao_denuncia, id_chave_fk}=req.body;
